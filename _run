@@ -1,8 +1,8 @@
 #!/bin/sh
 
-mpiexec -n 8 main 10 100 0 "test 1 input.txt"
+mpiexec -n 8 main 
 
-#mpirun -np 8 --hostfile hostfile main 10 100 0 "test 1 input.txt"
+#mpirun -np 8 --hostfile hostfile main 
 
 
 

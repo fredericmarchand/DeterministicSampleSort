@@ -57,12 +57,60 @@ void heapsort(int array[], int count)
 
 int main(int argc, char *argv[])
 {
+    char *inputFilePath;
+    int n;
     int p;
+    ifstream input;
+    string buffer;
+    int i;
+
+    int *inputArray;
+
+    int processorID;
     int id;
 
+
     MPI::Init(argc, argv); //  Initialize MPI.
-    p = MPI::COMM_WORLD.Get_size(); //  Get the number of processes.
+    processorID = MPI::COMM_WORLD.Get_size(); //  Get the number of processes.
     id = MPI::COMM_WORLD.Get_rank(); //  Get the individual process ID.
+
+    input.open(inputFilePath);
+
+    if (!input.is_open())
+    {
+        cerr << "Could not open file " << inputFilePath << endl;
+        return 1;   /// Error
+    }
+    
+    getline(input, buffer);
+    n = atoi(buffer.c_str());
+    
+    getline(input, buffer);
+    p = atoi(buffer.c_str());
+    
+    inputArray = new int[n/p];
+    
+    while (getline(input, buffer))
+    {
+        inputArray[i] = atoi(buffer.c_str());
+    }
+    
+    input.close();
+
+
+
+
+    int array[] = { 5, 45, 34, 23, 7, 1, 9, 3 };
+    for (int i = 0; i < 8; ++i)
+        cout << array[i] << ", ";
+    cout << endl;
+
+    heapsort(array, 8);
+
+    for (int i = 0; i < 8; ++i)
+        cout << array[i] << ", ";
+    cout << endl;
+
 
     // Terminate MPI.
     MPI::Finalize();
