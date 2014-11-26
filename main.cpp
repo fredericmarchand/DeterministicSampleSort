@@ -57,7 +57,8 @@ void heapsort(int array[], int count)
 
 int main(int argc, char *argv[])
 {
-    char *inputFilePath;
+    char inputFilePath[64];
+    char outputFilePath[64];
     int n;
     int p;
     ifstream input;
@@ -69,10 +70,12 @@ int main(int argc, char *argv[])
     int processorID;
     int id;
 
-
     MPI::Init(argc, argv); //  Initialize MPI.
     processorID = MPI::COMM_WORLD.Get_size(); //  Get the number of processes.
     id = MPI::COMM_WORLD.Get_rank(); //  Get the individual process ID.
+
+    sprintf(inputFilePath, "input-%d.txt", p);
+    sprintf(outputFilePath, "output-%d.txt", p);
 
     input.open(inputFilePath);
 
