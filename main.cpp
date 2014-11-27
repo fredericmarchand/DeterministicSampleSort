@@ -9,6 +9,7 @@ using namespace std;
 
 #include "mpi.h"
 
+#define DEBUG 2 
 
 void swap(int *array1, int *array2)
 {
@@ -66,17 +67,18 @@ int main(int argc, char *argv[])
     int i;
 
     int *inputArray;
+    int *recBuffer;
 
-    int processorID;
+    int processors;
     int id;
 
     MPI::Init(argc, argv); //  Initialize MPI.
-    processorID = MPI::COMM_WORLD.Get_size(); //  Get the number of processes.
+    processors = MPI::COMM_WORLD.Get_size(); //  Get the number of processes.
     id = MPI::COMM_WORLD.Get_rank(); //  Get the individual process ID.
 
-    sprintf(inputFilePath, "input-%d.txt", p);
-    sprintf(outputFilePath, "output-%d.txt", p);
-
+    sprintf(inputFilePath, "input-%d.txt", id);
+    sprintf(outputFilePath, "output-%d.txt", id);
+    
     input.open(inputFilePath);
 
     if (!input.is_open())
@@ -92,31 +94,54 @@ int main(int argc, char *argv[])
     p = atoi(buffer.c_str());
     
     inputArray = new int[n/p];
-    
+    recBuffer = new int[n/p];
     while (getline(input, buffer))
     {
-        inputArray[i] = atoi(buffer.c_str());
+        inputArray[i++] = atoi(buffer.c_str());
     }
     
     input.close();
 
-
-
-
-    int array[] = { 5, 45, 34, 23, 7, 1, 9, 3 };
-    for (int i = 0; i < 8; ++i)
-        cout << array[i] << ", ";
+#if DEBUG == 1
+    for (int i = 0; i < n/p; ++i)
+        cout << inputArray[i] << ", ";
     cout << endl;
+#endif
 
-    heapsort(array, 8);
+    heapsort(inputArray, n/p);
 
-    for (int i = 0; i < 8; ++i)
-        cout << array[i] << ", ";
+#if DEBUG == 1
+    for (int i = 0; i < n/p; ++i)
+        cout << inputArray[i] << ", ";
     cout << endl;
+#endif
+
+//    MPI_Alltoall(inputArray, n/p, MPI_INT, recBuffer, n/p, MPI_INT, MPI_COMM_WORLD);
+
+    if (id == 0){
+#if DEBUG == 2
+    for (int i = 0; i < n/p; ++i)
+        cout << recBuffer[i] << ", ";
+    cout << endl;
+#endif
+
+    heapsort(recBuffer, n/p);
+
+#if DEBUG == 2 
+    for (int i = 0; i < n/p; ++i)
+        cout << recBuffer[i] << ", ";
+    cout << endl;
+#endif
+    }
+
+
 
 
     // Terminate MPI.
     MPI::Finalize();
+
+    delete [] inputArray;
+    delete [] recBuffer;
 
     return 0;
 }
