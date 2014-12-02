@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
     int i;
 
     int size;
-    int sortedDataSize;
+    int sortedDataSize = 0;
 
     int *data;
     int *localPSample;
@@ -107,17 +107,17 @@ int main(int argc, char *argv[])
     
     size = n/p;
 
-    data = new int[size];
-    sortedData = new int[2 * size +1];
-    localPSample = new int[p];
-    allPSamples  = new int [p * p];
-    counts            = new int[p];
-    recCounts         = new int[p];
-    recDisplacements  = new int[p];
-    sendCounts        = new int[p];
-    sendDisplacements = new int[p];
-    bucketLocation    = new int[p];
-    bucketSize        = new int[p];
+    data = new int[size + 1];
+    sortedData = new int[(2 * size) +1];
+    localPSample = new int[p + 1];
+    allPSamples  = new int [p * p + 1];
+    counts            = new int[p + 1];
+    recCounts         = new int[p + 1];
+    recDisplacements  = new int[p + 1];
+    sendCounts        = new int[p + 1];
+    sendDisplacements = new int[p + 1];
+    bucketLocation    = new int[p + 1];
+    bucketSize        = new int[p + 1];
 
     while (getline(input, buffer))
     {
@@ -133,22 +133,12 @@ int main(int argc, char *argv[])
     for (int i = 0; i < p; ++i) 
     {
         localPSample[i] = data[i * size / p];
-    }
-    for (int i = 0; i < p; ++i) 
-    {
         recDisplacements[i] = i * p;
-    }
-    for (int i = 0; i < p; ++i) 
-    {
         recCounts[i] = p;
     }
 
-    cout << id << " 1" << endl;
-
     //Send all p-samples to proc 1
     MPI_Gatherv(localPSample, p, MPI_INT, allPSamples, recCounts, recDisplacements, MPI_INT, 0, MPI_COMM_WORLD);
-
-    cout << id << " 2" << endl;
 
     //Sort all received samples and compute global p-sample
     if (id == 0)
@@ -160,15 +150,12 @@ int main(int argc, char *argv[])
         }
     }
     
-    cout << id << " 3" << endl;
-
     //Broadcast global p-sample
     MPI_Bcast(localPSample, p, MPI_INT, 0, MPI_COMM_WORLD);
     
-    cout << id << " 4" << endl;
-
     //Bucket locally according to global p-sample
     int j = 0;
+    bucketLocation[0] = 0;
     for (int i = 1; i < p; ++i)
     {
         while (data[j] < localPSample[i])
@@ -178,8 +165,6 @@ int main(int argc, char *argv[])
         bucketLocation[i] = j; 
     }
     
-    cout << id << " 5" << endl;
-
     //Send bucket i to proc i
     for (int i = 0; i < p-1; ++i)
     {
@@ -195,11 +180,7 @@ int main(int argc, char *argv[])
         recDisplacements[i] = i;
     }
 
-    cout << id << " 6" << endl;
-
     MPI_Alltoallv(bucketSize, sendCounts, sendDisplacements, MPI_INT, counts, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
-
-    cout << id << " 7" << endl;
 
     sortedDataSize = 1;
     for (int i = 0; i < p; ++i)
@@ -212,11 +193,7 @@ int main(int argc, char *argv[])
     }
     sortedDataSize--;
 
-    cout << id << " 8" << endl;
-
-/*    MPI_Alltoallv(data, sendCounts, sendDisplacements, MPI_INT, sortedData, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
-
-    cout << id << " 9" << endl;
+    MPI_Alltoallv(data, sendCounts, sendDisplacements, MPI_INT, sortedData, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
 
     //Resort locally
     heapsort(sortedData, sortedDataSize);
@@ -238,7 +215,7 @@ int main(int argc, char *argv[])
     }
 
     outputFile.close();
-*/
+
 
     // Terminate MPI.
     MPI::Finalize();
