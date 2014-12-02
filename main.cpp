@@ -80,6 +80,9 @@ int main(int argc, char *argv[])
     int *bucketLocation;
     int *bucketSize;
     int *sortedData;
+    int *balancingData;
+    int *balancedData;
+    int *finalData;
 
     int processors;
     int id;
@@ -109,8 +112,9 @@ int main(int argc, char *argv[])
 
     data = new int[size + 1];
     sortedData = new int[(2 * size) +1];
+    finalData = new int[(2 * size) +1];
     localPSample = new int[p + 1];
-    allPSamples  = new int [p * p + 1];
+    allPSamples  = new int[p * p + 1];
     counts            = new int[p + 1];
     recCounts         = new int[p + 1];
     recDisplacements  = new int[p + 1];
@@ -118,6 +122,8 @@ int main(int argc, char *argv[])
     sendDisplacements = new int[p + 1];
     bucketLocation    = new int[p + 1];
     bucketSize        = new int[p + 1];
+    balancingData     = new int[p + 1];
+    balancedData      = new int[p + 1];
 
     while (getline(input, buffer))
     {
@@ -198,7 +204,103 @@ int main(int argc, char *argv[])
     //Resort locally
     heapsort(sortedData, sortedDataSize);
 
-    //balance? 
+    //Post processing: Array balancing
+    //need n/p items per processor
+
+    for (int i = 0; i < p; ++i)
+    {
+        recCounts[i] = 1;
+        recDisplacements[i] = i;
+    }
+
+    MPI_Allgatherv(&sortedDataSize, 1, MPI_INT, counts, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
+
+    int L = 0;
+    int R;
+    int l;
+    int r;
+
+    for (int i = 0; i < id; ++i)
+    {
+        L += counts[i];
+    }
+    R = L + counts[id] - 1;
+
+    for (int i = 0; i < p; ++i)
+    {
+        l = i * size;
+        r = (((i + 1) * size) - 1);
+        balancingData[i] = 0;
+        if ((L <= l) && (l <= R) && (R <= r))
+        {
+            balancingData[i] = R - l + 1;
+        }
+        if ((l <= L) && (L <= r) && (r <= R))
+        {
+            balancingData[i] = r - L + 1;
+        }
+        if ((l <= L) && (R <= r))
+        {
+            balancingData[i] = R - L + 1;
+        }
+        if ((l <= L) && (R <= r))
+        {
+            balancingData[i] = r - l + 1;
+        }
+    }
+
+    for (int i = 0; i < p; ++i)
+    {
+        sendCounts[i] = 1;
+        sendDisplacements[i] = i;
+        recCounts[i] = 1;
+        recDisplacements[i] = i;
+    }
+
+    MPI_Alltoallv(balancingData, sendCounts, sendDisplacements, MPI_INT, balancedData, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
+
+    l = 0;
+    r = 0;
+
+    for (int i = 0; i < p; ++i)
+    {
+        sendCounts[i] = balancingData[i];
+        sendDisplacements[i] = l;
+        l += sendCounts[i];
+        recCounts[i] = balancedData[i];
+        recDisplacements[i] = r;
+        r += recCounts[i];
+    }
+
+    /*if (id == 0)
+    {
+        for (int i = 0; i < p; ++i)
+        {
+            cout << sortedData[i] << " ,";
+        }
+        for (int i = 0; i < p; ++i)
+        {
+            cout << sendDisplacements[i] << " ,";
+        }
+        cout << endl;
+        for (int i = 0; i < p; ++i)
+        {
+            cout << recDisplacements[i] << " ,";
+        }
+        cout << endl;
+        for (int i = 0; i < p; ++i)
+        {
+            cout << sendCounts[i] << " ,";
+        }
+        cout << endl;
+        for (int i = 0; i < p; ++i)
+        {
+            cout << recCounts[i] << " ,";
+        }
+        cout << endl;
+    }*/
+
+    MPI_Alltoallv(sortedData, sendCounts, sendDisplacements, MPI_INT, finalData, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
 
     //Write to file
     ofstream outputFile (outputFilePath); 
@@ -209,13 +311,12 @@ int main(int argc, char *argv[])
         return 1;   /// Error
     }
 
-    for (int i = 0; i < sortedDataSize; ++i)
+    for (int i = 0; i < size; ++i)
     {
-        outputFile << sortedData[i] << endl;
+        outputFile << finalData[i] << endl;
     }
 
     outputFile.close();
-
 
     // Terminate MPI.
     MPI::Finalize();
@@ -231,6 +332,7 @@ int main(int argc, char *argv[])
     delete [] bucketLocation;
     delete [] bucketSize;
     delete [] sortedData;
-
+    delete [] balancingData;
+    delete [] finalData;
     return 0;
 }
