@@ -56,20 +56,30 @@ void heapsort(int array[], int count)
     }
 }
 
-int main(int argc, char *argv[])
+void setupCountsAndDisplacements(int *sCounts, int *rCounts, int *sDispl, int *rDispl, int sc, int rc, int sd, int rd, int p)
 {
-    char inputFilePath[64];
-    char outputFilePath[64];
-    int n;
-    int p;
-    ifstream input;
-    string buffer;
-    int i;
+    for (int i = 0; i < p; ++i)
+    {
+        sCounts[i] = sc;
 
-    int size;
+        if (sd < 0)
+            sDispl[i] = i;
+        else
+            sDispl[i] = sd;
+
+        rCounts[i] = rc;
+
+        if (rd < 0)
+            rDispl[i] = i;
+        else
+            rDispl[i] = rd;
+    }
+}
+
+void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
+{
     int sortedDataSize = 0;
 
-    int *data;
     int *localPSample;
     int *allPSamples;
     int *allBuckets;
@@ -82,40 +92,11 @@ int main(int argc, char *argv[])
     int *sortedData;
     int *balancingData;
     int *balancedData;
-    int *finalData;
 
-    int processors;
-    int id;
-
-    MPI::Init(argc, argv); //  Initialize MPI.
-    processors = MPI::COMM_WORLD.Get_size(); //  Get the number of processes.
-    id = MPI::COMM_WORLD.Get_rank(); //  Get the individual process ID.
-
-    sprintf(inputFilePath, "input-%d.txt", id);
-    sprintf(outputFilePath, "output-%d.txt", id);
-    
-    input.open(inputFilePath);
-
-    if (!input.is_open())
-    {
-        cerr << "Could not open file " << inputFilePath << endl;
-        return 1;   /// Error
-    }
-    
-    getline(input, buffer);
-    n = atoi(buffer.c_str());
-    
-    getline(input, buffer);
-    p = atoi(buffer.c_str());
-    
-    size = n/p;
-
-    data = new int[size + 1];
-    sortedData = new int[(2 * size) +1];
-    finalData = new int[(2 * size) +1];
+    sortedData = new int[(2 * size) + 1];
     localPSample = new int[p + 1];
     allPSamples  = new int[p * p + 1];
-    allBuckets            = new int[p + 1];
+    allBuckets        = new int[p + 1];
     recCounts         = new int[p + 1];
     recDisplacements  = new int[p + 1];
     sendCounts        = new int[p + 1];
@@ -124,13 +105,6 @@ int main(int argc, char *argv[])
     bucketSize        = new int[p + 1];
     balancingData     = new int[p + 1];
     balancedData      = new int[p + 1];
-
-    while (getline(input, buffer))
-    {
-        data[i++] = atoi(buffer.c_str());
-    }
-    
-    input.close();
 
     //Sort locally
     heapsort(data, size);
@@ -177,14 +151,8 @@ int main(int argc, char *argv[])
         bucketSize[i] = bucketLocation[i+1] - bucketLocation[i];
     }
     bucketSize[p-1] = size - bucketLocation[p-1];
-    
-    for (int i = 0; i < p; ++i)
-    {
-        sendCounts[i] = 1;
-        sendDisplacements[i] = i;
-        recCounts[i] = 1;
-        recDisplacements[i] = i;
-    }
+
+    setupCountsAndDisplacements(sendCounts, recCounts, sendDisplacements, recDisplacements, 1, 1, -1, -1, p);
 
     MPI_Alltoallv(bucketSize, sendCounts, sendDisplacements, MPI_INT, allBuckets, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
 
@@ -207,13 +175,7 @@ int main(int argc, char *argv[])
     //Post processing: Array balancing
     //need n/p items per processor
 
-    for (int i = 0; i < p; ++i)
-    {
-        sendCounts[i] = 1;
-        sendDisplacements[i] = 0;
-        recCounts[i] = 1;
-        recDisplacements[i] = i;
-    }
+    setupCountsAndDisplacements(sendCounts, recCounts, sendDisplacements, recDisplacements, 1, 1, 0, -1, p);
 
     MPI_Alltoallv(&sortedDataSize, sendCounts, sendDisplacements, MPI_INT, allBuckets, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
 
@@ -251,13 +213,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    for (int i = 0; i < p; ++i)
-    {
-        sendCounts[i] = 1;
-        sendDisplacements[i] = i;
-        recCounts[i] = 1;
-        recDisplacements[i] = i;
-    }
+    setupCountsAndDisplacements(sendCounts, recCounts, sendDisplacements, recDisplacements, 1, 1, -1, -1, p);
 
     MPI_Alltoallv(balancingData, sendCounts, sendDisplacements, MPI_INT, balancedData, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
 
@@ -275,6 +231,73 @@ int main(int argc, char *argv[])
     }
 
     MPI_Alltoallv(sortedData, sendCounts, sendDisplacements, MPI_INT, finalData, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
+
+    delete [] localPSample;
+    delete [] allPSamples;
+    delete [] allBuckets;
+    delete [] recCounts;
+    delete [] sendCounts;
+    delete [] recDisplacements;
+    delete [] sendDisplacements;
+    delete [] bucketLocation;
+    delete [] bucketSize;
+    delete [] sortedData;
+    delete [] balancingData;
+}
+
+int main(int argc, char *argv[])
+{
+    char inputFilePath[64];
+    char outputFilePath[64];
+    int n;
+    int p;
+    ifstream input;
+    string buffer;
+    int i;
+
+    int size;
+    int sortedDataSize = 0;
+
+    int *data;
+    int *finalData;
+
+    int processors;
+    int id;
+
+    MPI::Init(argc, argv); //  Initialize MPI.
+    processors = MPI::COMM_WORLD.Get_size(); //  Get the number of processes.
+    id = MPI::COMM_WORLD.Get_rank(); //  Get the individual process ID.
+
+    sprintf(inputFilePath, "input-%d.txt", id);
+    sprintf(outputFilePath, "output-%d.txt", id);
+    
+    input.open(inputFilePath);
+
+    if (!input.is_open())
+    {
+        cerr << "Could not open file " << inputFilePath << endl;
+        return 1;   /// Error
+    }
+    
+    getline(input, buffer);
+    n = atoi(buffer.c_str());
+    
+    getline(input, buffer);
+    p = atoi(buffer.c_str());
+    
+    size = n/p;
+
+    data = new int[size + 1];
+    finalData = new int[size + 1];
+
+    while (getline(input, buffer))
+    {
+        data[i++] = atoi(buffer.c_str());
+    }
+    
+    input.close();
+
+    deterministicSampleSort(data, size, finalData, p, id);
 
     //Write to file
     ofstream outputFile (outputFilePath); 
@@ -296,17 +319,7 @@ int main(int argc, char *argv[])
     MPI::Finalize();
 
     delete [] data;
-    delete [] localPSample;
-    delete [] allPSamples;
-    delete [] allBuckets;
-    delete [] recCounts;
-    delete [] sendCounts;
-    delete [] recDisplacements;
-    delete [] sendDisplacements;
-    delete [] bucketLocation;
-    delete [] bucketSize;
-    delete [] sortedData;
-    delete [] balancingData;
     delete [] finalData;
+
     return 0;
 }
