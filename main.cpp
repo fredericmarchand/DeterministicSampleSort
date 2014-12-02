@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
     int *data;
     int *localPSample;
     int *allPSamples;
-    int *counts;
+    int *allBuckets;
     int *recCounts;
     int *sendCounts;
     int *recDisplacements;
@@ -115,7 +115,7 @@ int main(int argc, char *argv[])
     finalData = new int[(2 * size) +1];
     localPSample = new int[p + 1];
     allPSamples  = new int[p * p + 1];
-    counts            = new int[p + 1];
+    allBuckets            = new int[p + 1];
     recCounts         = new int[p + 1];
     recDisplacements  = new int[p + 1];
     sendCounts        = new int[p + 1];
@@ -186,16 +186,16 @@ int main(int argc, char *argv[])
         recDisplacements[i] = i;
     }
 
-    MPI_Alltoallv(bucketSize, sendCounts, sendDisplacements, MPI_INT, counts, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
+    MPI_Alltoallv(bucketSize, sendCounts, sendDisplacements, MPI_INT, allBuckets, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
 
     sortedDataSize = 1;
     for (int i = 0; i < p; ++i)
     {
         sendCounts[i] = bucketSize[i];
         sendDisplacements[i] = bucketLocation[i];
-        recCounts[i] = counts[i];
+        recCounts[i] = allBuckets[i];
         recDisplacements[i] = sortedDataSize-1; 
-        sortedDataSize += counts[i];
+        sortedDataSize += allBuckets[i];
     }
     sortedDataSize--;
 
@@ -209,11 +209,13 @@ int main(int argc, char *argv[])
 
     for (int i = 0; i < p; ++i)
     {
+        sendCounts[i] = 1;
+        sendDisplacements[i] = 0;
         recCounts[i] = 1;
         recDisplacements[i] = i;
     }
 
-    MPI_Allgatherv(&sortedDataSize, 1, MPI_INT, counts, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
+    MPI_Alltoallv(&sortedDataSize, sendCounts, sendDisplacements, MPI_INT, allBuckets, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
 
     int L = 0;
     int R;
@@ -222,9 +224,9 @@ int main(int argc, char *argv[])
 
     for (int i = 0; i < id; ++i)
     {
-        L += counts[i];
+        L += allBuckets[i];
     }
-    R = L + counts[id] - 1;
+    R = L + allBuckets[id] - 1;
 
     for (int i = 0; i < p; ++i)
     {
@@ -243,7 +245,7 @@ int main(int argc, char *argv[])
         {
             balancingData[i] = R - L + 1;
         }
-        if ((l <= L) && (R <= r))
+        if ((L <= l) && (r <= R))
         {
             balancingData[i] = r - l + 1;
         }
@@ -272,34 +274,6 @@ int main(int argc, char *argv[])
         r += recCounts[i];
     }
 
-    /*if (id == 0)
-    {
-        for (int i = 0; i < p; ++i)
-        {
-            cout << sortedData[i] << " ,";
-        }
-        for (int i = 0; i < p; ++i)
-        {
-            cout << sendDisplacements[i] << " ,";
-        }
-        cout << endl;
-        for (int i = 0; i < p; ++i)
-        {
-            cout << recDisplacements[i] << " ,";
-        }
-        cout << endl;
-        for (int i = 0; i < p; ++i)
-        {
-            cout << sendCounts[i] << " ,";
-        }
-        cout << endl;
-        for (int i = 0; i < p; ++i)
-        {
-            cout << recCounts[i] << " ,";
-        }
-        cout << endl;
-    }*/
-
     MPI_Alltoallv(sortedData, sendCounts, sendDisplacements, MPI_INT, finalData, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
 
     //Write to file
@@ -324,7 +298,7 @@ int main(int argc, char *argv[])
     delete [] data;
     delete [] localPSample;
     delete [] allPSamples;
-    delete [] counts;
+    delete [] allBuckets;
     delete [] recCounts;
     delete [] sendCounts;
     delete [] recDisplacements;
