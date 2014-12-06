@@ -1,8 +1,8 @@
 #!/bin/sh
 
-mpiexec -n 8 main 
+#mpiexec -n 8 main 
 
-#mpirun -np 8 --hostfile hostfile main 
+mpirun -np 8 --hostfile hostfile main 
 
 
 
