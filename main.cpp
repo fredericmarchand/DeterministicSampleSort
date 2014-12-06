@@ -35,7 +35,9 @@ void siftDown(int array[], int start, int end)
             root = child;
         }
         else
+        {
             return;
+        }
     }
 }
 
@@ -132,7 +134,9 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
     
     //Broadcast global p-sample
     MPI_Bcast(localPSample, p, MPI_INT, 0, MPI_COMM_WORLD);
-    
+   
+    //From this point on, localPSample contains the global p-sample 
+
     //Bucket locally according to global p-sample
     int j = 0;
     bucketLocation[0] = 0;
@@ -145,7 +149,6 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
         bucketLocation[i] = j; 
     }
     
-    //Send bucket i to proc i
     for (int i = 0; i < p-1; ++i)
     {
         bucketSize[i] = bucketLocation[i+1] - bucketLocation[i];
@@ -154,15 +157,16 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
 
     setupCountsAndDisplacements(sendCounts, recCounts, sendDisplacements, recDisplacements, 1, 1, -1, -1, p);
 
+    //Send bucket i to proc i
     MPI_Alltoallv(bucketSize, sendCounts, sendDisplacements, MPI_INT, allBuckets, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
 
     sortedDataSize = 1;
     for (int i = 0; i < p; ++i)
     {
         sendCounts[i] = bucketSize[i];
-        sendDisplacements[i] = bucketLocation[i];
         recCounts[i] = allBuckets[i];
-        recDisplacements[i] = sortedDataSize-1; 
+        sendDisplacements[i] = bucketLocation[i];
+        recDisplacements[i] = sortedDataSize - 1; 
         sortedDataSize += allBuckets[i];
     }
     sortedDataSize--;
@@ -176,40 +180,42 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
     //need n/p items per processor
 
     setupCountsAndDisplacements(sendCounts, recCounts, sendDisplacements, recDisplacements, 1, 1, 0, -1, p);
-
+    
+    //Distribute current bucket size of each processor
     MPI_Alltoallv(&sortedDataSize, sendCounts, sendDisplacements, MPI_INT, allBuckets, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
 
-    int L = 0;
-    int R;
-    int l;
-    int r;
+    int cumulativeLeft = 0;
+    int cumulativeRight = 0;
+    int left = 0;
+    int right = 0;
 
+    //Calculate how much data to distribute to p-1 and p+1
     for (int i = 0; i < id; ++i)
     {
-        L += allBuckets[i];
+        cumulativeLeft += allBuckets[i];
     }
-    R = L + allBuckets[id] - 1;
+    cumulativeRight = cumulativeLeft + allBuckets[id] - 1;
 
     for (int i = 0; i < p; ++i)
     {
-        l = i * size;
-        r = (((i + 1) * size) - 1);
+        left = i * size;
+        right = (((i + 1) * size) - 1);
         balancingData[i] = 0;
-        if ((L <= l) && (l <= R) && (R <= r))
+        if ((cumulativeLeft <= left) && (left <= cumulativeRight) && (cumulativeRight <= right))
         {
-            balancingData[i] = R - l + 1;
+            balancingData[i] = cumulativeRight - left + 1;
         }
-        if ((l <= L) && (L <= r) && (r <= R))
+        else if ((left <= cumulativeLeft) && (cumulativeLeft <= right) && (right <= cumulativeRight))
         {
-            balancingData[i] = r - L + 1;
+            balancingData[i] = right - cumulativeLeft + 1;
         }
-        if ((l <= L) && (R <= r))
+        else if ((left <= cumulativeLeft) && (cumulativeRight <= right))
         {
-            balancingData[i] = R - L + 1;
+            balancingData[i] = cumulativeRight - cumulativeLeft + 1;
         }
-        if ((L <= l) && (r <= R))
+        else if ((cumulativeLeft <= left) && (right <= cumulativeRight))
         {
-            balancingData[i] = r - l + 1;
+            balancingData[i] = right - left + 1;
         }
     }
 
@@ -217,17 +223,17 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
 
     MPI_Alltoallv(balancingData, sendCounts, sendDisplacements, MPI_INT, balancedData, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
 
-    l = 0;
-    r = 0;
+    left = 0;
+    right = 0;
 
     for (int i = 0; i < p; ++i)
     {
         sendCounts[i] = balancingData[i];
-        sendDisplacements[i] = l;
-        l += sendCounts[i];
         recCounts[i] = balancedData[i];
-        recDisplacements[i] = r;
-        r += recCounts[i];
+        sendDisplacements[i] = left;
+        recDisplacements[i] = right;
+        left += sendCounts[i];
+        right += recCounts[i];
     }
 
     MPI_Alltoallv(sortedData, sendCounts, sendDisplacements, MPI_INT, finalData, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
@@ -247,8 +253,8 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
 
 int main(int argc, char *argv[])
 {
-    char inputFilePath[64];
-    char outputFilePath[64];
+    char inputFilePath[256];
+    char outputFilePath[256];
     int n;
     int p;
     ifstream input;
@@ -264,12 +270,15 @@ int main(int argc, char *argv[])
     int processors;
     int id;
 
+    double startTime;
+    double endTime;
+
     MPI::Init(argc, argv); //  Initialize MPI.
     processors = MPI::COMM_WORLD.Get_size(); //  Get the number of processes.
     id = MPI::COMM_WORLD.Get_rank(); //  Get the individual process ID.
 
-    sprintf(inputFilePath, "input-%d.txt", id);
-    sprintf(outputFilePath, "output-%d.txt", id);
+    sprintf(inputFilePath, "/tmp/fredericmarchand/input-%d.txt", id);
+    sprintf(outputFilePath, "/tmp/fredericmarchand/output-%d.txt", id);
     
     input.open(inputFilePath);
 
@@ -296,8 +305,12 @@ int main(int argc, char *argv[])
     }
     
     input.close();
-
+    
+    startTime = MPI::Wtime();
     deterministicSampleSort(data, size, finalData, p, id);
+    endTime = MPI::Wtime();
+
+    cout << "Total Time for proc" << id << ": " << endTime - startTime << endl;
 
     //Write to file
     ofstream outputFile (outputFilePath); 

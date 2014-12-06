@@ -7,7 +7,7 @@ import random
 def main(n, p):
 
     for i in range(int(p)):
-        with open("input-" + str(i) + ".txt", 'w') as f:
+        with open("/tmp/fredericmarchand/input-" + str(i) + ".txt", 'w') as f:
 
             f.write(n + '\n')
             f.write(p + '\n')
