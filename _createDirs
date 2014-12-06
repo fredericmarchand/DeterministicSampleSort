@@ -1,4 +1,4 @@
 #!/bin/sh
 
-mpirun -np 8 --hostfile createTempDirsHostfile createDirs 10000000 8 
+mpirun -np 8 --hostfile hostfile createDirs 10000000 8 
 
