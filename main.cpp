@@ -78,7 +78,7 @@ void setupCountsAndDisplacements(int *sCounts, int *rCounts, int *sDispl, int *r
     }
 }
 
-void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
+void deterministicSampleSort(int *data, int size, int *finalData, int p, int id, double *compTime, double *commTime)
 {
     int sortedDataSize = 0;
 
@@ -95,6 +95,11 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
     int *balancingData;
     int *balancedData;
 
+    double compTime2;
+    double commTime2;
+
+    compTime2 = MPI::Wtime();
+
     sortedData = new int[(2 * size) + 1];
     localPSample = new int[p + 1];
     allPSamples  = new int[p * p + 1];
@@ -107,7 +112,7 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
     bucketSize        = new int[p + 1];
     balancingData     = new int[p + 1];
     balancedData      = new int[p + 1];
-
+    
     //Sort locally
     heapsort(data, size);
 
@@ -119,8 +124,14 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
         recCounts[i] = p;
     }
 
+    *compTime += MPI::Wtime() - compTime2;
+    commTime2 = MPI::Wtime();
+
     //Send all p-samples to proc 1
     MPI_Gatherv(localPSample, p, MPI_INT, allPSamples, recCounts, recDisplacements, MPI_INT, 0, MPI_COMM_WORLD);
+    
+    *commTime += MPI::Wtime() - commTime2;
+    compTime2 = MPI::Wtime();
 
     //Sort all received samples and compute global p-sample
     if (id == 0)
@@ -131,10 +142,16 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
             localPSample[i] = allPSamples[i * p];
         }
     }
-    
+   
+    *compTime += MPI::Wtime() - compTime2;
+    commTime2 = MPI::Wtime();
+
     //Broadcast global p-sample
     MPI_Bcast(localPSample, p, MPI_INT, 0, MPI_COMM_WORLD);
-   
+
+    *commTime += MPI::Wtime() - commTime2;
+    compTime2 = MPI::Wtime();
+
     //From this point on, localPSample contains the global p-sample 
 
     //Bucket locally according to global p-sample
@@ -157,8 +174,14 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
 
     setupCountsAndDisplacements(sendCounts, recCounts, sendDisplacements, recDisplacements, 1, 1, -1, -1, p);
 
+    *compTime += MPI::Wtime() - compTime2;
+    commTime2 = MPI::Wtime();
+
     //Send bucket i to proc i
     MPI_Alltoallv(bucketSize, sendCounts, sendDisplacements, MPI_INT, allBuckets, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
+
+    *commTime += MPI::Wtime() - commTime2;
+    compTime2 = MPI::Wtime();
 
     sortedDataSize = 1;
     for (int i = 0; i < p; ++i)
@@ -171,7 +194,13 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
     }
     sortedDataSize--;
 
+    *compTime += MPI::Wtime() - compTime2;
+    commTime2 = MPI::Wtime();
+
     MPI_Alltoallv(data, sendCounts, sendDisplacements, MPI_INT, sortedData, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
+
+    *commTime += MPI::Wtime() - commTime2;
+    compTime2 = MPI::Wtime();
 
     //Resort locally
     heapsort(sortedData, sortedDataSize);
@@ -180,9 +209,15 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
     //need n/p items per processor
 
     setupCountsAndDisplacements(sendCounts, recCounts, sendDisplacements, recDisplacements, 1, 1, 0, -1, p);
-    
+   
+    *compTime += MPI::Wtime() - compTime2;
+    commTime2 = MPI::Wtime();
+
     //Distribute current bucket size of each processor
     MPI_Alltoallv(&sortedDataSize, sendCounts, sendDisplacements, MPI_INT, allBuckets, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
+
+    *commTime += MPI::Wtime() - commTime2;
+    compTime2 = MPI::Wtime();
 
     int cumulativeLeft = 0;
     int cumulativeRight = 0;
@@ -221,7 +256,13 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
 
     setupCountsAndDisplacements(sendCounts, recCounts, sendDisplacements, recDisplacements, 1, 1, -1, -1, p);
 
+    *compTime += MPI::Wtime() - compTime2;
+    commTime2 = MPI::Wtime();
+
     MPI_Alltoallv(balancingData, sendCounts, sendDisplacements, MPI_INT, balancedData, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
+
+    *commTime += MPI::Wtime() - commTime2;
+    compTime2 = MPI::Wtime();
 
     left = 0;
     right = 0;
@@ -236,7 +277,13 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
         right += recCounts[i];
     }
 
+    *compTime += MPI::Wtime() - compTime2;
+    commTime2 = MPI::Wtime();
+
     MPI_Alltoallv(sortedData, sendCounts, sendDisplacements, MPI_INT, finalData, recCounts, recDisplacements, MPI_INT, MPI_COMM_WORLD);
+
+    *commTime += MPI::Wtime() - commTime2;
+    compTime2 = MPI::Wtime();
 
     delete [] localPSample;
     delete [] allPSamples;
@@ -249,6 +296,8 @@ void deterministicSampleSort(int *data, int size, int *finalData, int p, int id)
     delete [] bucketSize;
     delete [] sortedData;
     delete [] balancingData;
+
+    *compTime += MPI::Wtime() - compTime2;
 }
 
 int main(int argc, char *argv[])
@@ -262,7 +311,6 @@ int main(int argc, char *argv[])
     int i;
 
     int size;
-    int sortedDataSize = 0;
 
     int *data;
     int *finalData;
@@ -272,6 +320,8 @@ int main(int argc, char *argv[])
 
     double startTime;
     double endTime;
+    double computationTime = 0;
+    double communicationTime = 0;
 
     MPI::Init(argc, argv); //  Initialize MPI.
     processors = MPI::COMM_WORLD.Get_size(); //  Get the number of processes.
@@ -307,10 +357,10 @@ int main(int argc, char *argv[])
     input.close();
     
     startTime = MPI::Wtime();
-    deterministicSampleSort(data, size, finalData, p, id);
+    deterministicSampleSort(data, size, finalData, p, id, &computationTime, &communicationTime);
     endTime = MPI::Wtime();
 
-    cout << "Total Time for proc" << id << ": " << endTime - startTime << endl;
+    cout << "Total Time for proc" << id << ": " << endTime - startTime << ", compTime: " << computationTime << ", commTime: " << communicationTime << endl;
 
     //Write to file
     ofstream outputFile (outputFilePath); 
